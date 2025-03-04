@@ -1,6 +1,7 @@
 import asyncio
 import json
 import socket
+from decimal import Decimal
 from typing import Any, Callable, Dict
 
 import websockets
@@ -8,14 +9,11 @@ import websockets
 from config.settings import PAIR, PROFIT, STEP, TIMEOUT, TRADING_STRATEGY, URL, VALUE
 from data.database import get_price_history, insert_price_history
 from trading.trade_analyzer import analyze_trade
-from trading.trade_state import prices, profit_value, stack, transactions
+from trading.trade_state import store
 from utils.logger import logger
 
 
 async def check_internet() -> bool:
-    """
-    Перевіряє, чи є інтернет-з'єднання за допомогою DNS-запиту до 1.1.1.1.
-    """
     try:
         socket.gethostbyname("1.1.1.1")
         return True
@@ -24,9 +22,6 @@ async def check_internet() -> bool:
 
 
 def process_trade_data(data_json: Dict[str, Any]) -> None:
-    """
-    Обробка отриманих торгових даних.
-    """
     if "data" not in data_json:
         logger.warning("Некоректна структура даних (відсутнє поле 'data').")
         return
@@ -41,35 +36,40 @@ def process_trade_data(data_json: Dict[str, Any]) -> None:
             logger.warning(f"⚠️ Некоректні дані у трейді: {trade}")
             continue
 
+        side_lower = side.lower()
+        if side_lower == "sell":
+            logger.debug(f"Skipping SELL trade at price={price}, side={side_lower}")
+            continue
+
         price_f = float(price)
         quantity_f = float(quantity)
 
         insert_price_history(PAIR, price_f)
-        logger.info("----------------------------------------------")
+        store.add_price(Decimal(str(price_f)))
+
         from utils.time_utils import convert_unix_to_human
 
         formatted_time = convert_unix_to_human(time_ms)
+        logger.info("----------------------------------------------")
         logger.info(
             f"{formatted_time} - Trade received: {price_f} USDT, "
             f"Quantity: {quantity_f}, Side: {side}"
         )
 
         analyze_trade(price_f)
-        # print(f"📊 Stack: {list(stack)}")
-        logger.info(f"🔹 Загальний профіт: {profit_value}")
+
+        logger.info(f"🔹 Загальний профіт: {store.get_current_profit()}")
 
 
 async def start_trade_stream() -> None:
-    """
-    Основна функція для підключення до WebSocket і безкінечного циклу перезапуску.
-    """
+    global TRADING_STRATEGY
 
     while True:
         try:
             if await check_internet():
-                if not prices:
+                if not store.prices:
                     db_prices = [p for _, p in get_price_history(PAIR, 200)]
-                    prices.extend(db_prices)
+                    store.prices.extend(db_prices)
 
                 await _create_connection(URL, f"publicTrade.{PAIR}", process_trade_data)
             else:
@@ -89,9 +89,8 @@ async def start_trade_stream() -> None:
 async def _create_connection(
     ws_url: str, topic: str, process_function: Callable[[Dict[str, Any]], None]
 ) -> None:
-    """
-    Приватна функція для встановлення з'єднання з WebSocket.
-    """
+    global TRADING_STRATEGY
+
     async with websockets.connect(ws_url, ping_interval=None) as websocket:
         params = {"op": "subscribe", "args": [topic]}
         await websocket.send(json.dumps(params))
@@ -119,9 +118,6 @@ async def _create_connection(
 
 
 async def _send_ping(websocket: websockets.WebSocketClientProtocol) -> None:
-    """
-    Фонове відправлення ping, щоб з'єднання не закривалось.
-    """
     while True:
         try:
             await websocket.ping()

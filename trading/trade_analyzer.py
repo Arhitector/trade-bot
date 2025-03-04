@@ -3,27 +3,21 @@ from typing import Optional
 
 from config.settings import TRADING_STRATEGY
 from indicators.indicators_summary import indicators_sum
+from trading.trade_state import store
 
-from .trade_state import prices
 from .trade_strategies import execute_profit_strategy, execute_step_strategy
-
-_prev_price: Optional[Decimal] = None
 
 
 def analyze_trade(current_price: float) -> None:
-    """
-    Аналізує нову ціну та викликає відповідну стратегію.
-    """
-    global _prev_price
-
     price = Decimal(str(current_price))
 
-    if _prev_price is None:
-        _prev_price = price
-        prices.append(price)
+    prev_price = store.get_prev_price()
+
+    if prev_price is None:
+        store.add_price(price)
         return
 
-    prices.append(price)
+    store.add_price(price)
 
     if TRADING_STRATEGY == "step":
         execute_step_strategy(price)
@@ -32,6 +26,4 @@ def analyze_trade(current_price: float) -> None:
     else:
         pass
 
-    _prev_price = price
-
-    indicators_sum(prices, price)
+    indicators_sum(store.get_prices_copy(), price)

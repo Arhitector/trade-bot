@@ -3,8 +3,8 @@ from decimal import Decimal, getcontext
 getcontext().prec = 10
 
 URL = "wss://stream.bybit.com/v5/public/spot"
-# PAIR = "SALDUSDT"
-PAIR = "HMSTRUSDT"
+PAIR = "SALDUSDT"
+# DEFAULT_PAIR = "HMSTRUSDT"
 
 TOP = Decimal("0.000700")
 BOTTOM = Decimal("0.000500")
