@@ -3,3 +3,5 @@ __pycache__/
 .env
 config.fish
 trading.log
+trades.db
+trading.log
